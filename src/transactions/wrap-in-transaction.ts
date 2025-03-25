@@ -25,7 +25,7 @@ export interface WrapInTransactionOptions {
   name?: string | symbol;
 }
 
-export const wrapInTransaction = <Fn extends (this: any, ...args: any[]) => ReturnType<Fn>>(
+export const wrapInTransaction = <Fn extends (this: unknown, ...args: unknown[]) => ReturnType<Fn>>(
   fn: Fn,
   options?: WrapInTransactionOptions,
 ) => {

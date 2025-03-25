@@ -25,32 +25,33 @@ export const runAndTriggerHooks = async (hook: EventEmitter, cb: () => unknown) 
 
     // Store the promises returned by commit handlers
     const commitPromises: Promise<unknown>[] = [];
-    
+
+    // promiseCollector is an internal callback emitted with each event.
+    // This acts as a channel between the receiver (.once() listener) to send
+    // promises back to the emitter.
+    const promiseCollector = (promise: Promise<unknown>) => {
+      commitPromises.push(promise);
+    };
+
     // Create a promise that will be resolved when all commit handlers are executed
     const commitPromise = new Promise<void>((resolve) => {
       setImmediate(() => {
         // Emit the 'commit' event and collect promises
-        hook.emit('commit', (promise: Promise<unknown>) => {
-          if (promise && typeof promise.then === 'function') {
-            commitPromises.push(promise);
-          }
-        });
-        
+        hook.emit('commit', promiseCollector);
+
         // Once all handlers have been called, resolve the promise
-        Promise.all(commitPromises)
-          .catch(error => console.error('Error in commit handler:', error))
-          .finally(() => {
-            // Always clean up after commit handlers, regardless of success/failure
-            hook.emit('end', undefined);
-            hook.removeAllListeners();
-            resolve();
-          });
+        Promise.all(commitPromises).finally(() => {
+          // Always clean up after commit handlers, regardless of success/failure
+          hook.emit('end', undefined);
+          hook.removeAllListeners();
+          resolve();
+        });
       });
     });
-    
+
     // Wait for all commit handlers to complete
     await commitPromise;
-    
+
     return result;
   } catch (err) {
     setImmediate(() => {
@@ -64,7 +65,7 @@ export const runAndTriggerHooks = async (hook: EventEmitter, cb: () => unknown) 
   }
 };
 
-export const createEventEmitterInNewContext = (context: StorageDriver) => {
+export const createEventEmitterInNewContext = () => {
   const options = getTransactionalOptions();
 
   const emitter = new EventEmitter();
@@ -73,7 +74,7 @@ export const createEventEmitterInNewContext = (context: StorageDriver) => {
 };
 
 export const runInNewHookContext = async (context: StorageDriver, cb: () => unknown) => {
-  const hook = createEventEmitterInNewContext(context);
+  const hook = createEventEmitterInNewContext();
 
   return await context.run(() => {
     setHookInContext(context, hook);
@@ -83,13 +84,17 @@ export const runInNewHookContext = async (context: StorageDriver, cb: () => unkn
 };
 
 export const runOnTransactionCommit = (cb: () => void | Promise<unknown>) => {
-  getTransactionalContextHook().once('commit', (collectPromise?: (promise: Promise<unknown>) => void) => {
-    const result = cb();
-    if (result && typeof result.then === 'function' && collectPromise) {
-      collectPromise(result);
-    }
-    return result;
-  });
+  getTransactionalContextHook().once(
+    'commit',
+    (promiseCollector: (promise: Promise<unknown>) => void) => {
+      const result = cb();
+      // If the original callback returns a promise, we need to collect it
+      if (result && typeof result.then === 'function') {
+        promiseCollector(result);
+      }
+      return result;
+    },
+  );
 };
 
 export const runOnTransactionRollback = (cb: (e: Error) => void) => {
