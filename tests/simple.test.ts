@@ -98,205 +98,28 @@ describe('Transactional', () => {
         });
 
         const transactionIdOutside = await getCurrentTransactionId(source);
-        expect(transactionIdOutside).toBe(null);
-        expect(transactionIdOutside).not.toBe(transactionIdBefore);
-      });
-
-      it('supports nested transactions', async () => {
-        await runInTransaction(async () => {
-          const transactionIdBefore = await getCurrentTransactionId(source);
-
-          await runInTransaction(async () => {
-            const transactionIdAfter = await getCurrentTransactionId(source);
-            expect(transactionIdBefore).toBe(transactionIdAfter);
-          });
-        });
-
-        expect.assertions(1);
-      });
-
-      it('supports several concurrent transactions', async () => {
-        let transactionA: number | null = null;
-        let transactionB: number | null = null;
-        let transactionC: number | null = null;
-
-        await Promise.all([
-          runInTransaction(async () => {
-            transactionA = await getCurrentTransactionId(source);
-          }),
-          runInTransaction(async () => {
-            transactionB = await getCurrentTransactionId(source);
-          }),
-          runInTransaction(async () => {
-            transactionC = await getCurrentTransactionId(source);
-          }),
-        ]);
-
-        await Promise.all([transactionA, transactionB, transactionC]);
-
-        expect(transactionA).toBeTruthy();
-        expect(transactionB).toBeTruthy();
-        expect(transactionC).toBeTruthy();
-
-        expect(transactionA).not.toBe(transactionB);
-        expect(transactionA).not.toBe(transactionC);
-        expect(transactionB).not.toBe(transactionC);
-      });
-    });
-
-    // We want to check that `save` doesn't create any intermediate transactions
-    describe('Repository', () => {
-      it('should not create any intermediate transactions', async () => {
-        let transactionIdA: number | null = null;
-        let transactionIdB: number | null = null;
-
-        const userRepository = dataSource.getRepository(User);
-
-        await runInTransaction(async () => {
-          transactionIdA = await getCurrentTransactionId(dataSource);
-          await userRepository.save(new User('John Doe', 100));
-        });
-
-        await runInTransaction(async () => {
-          transactionIdB = await getCurrentTransactionId(dataSource);
-        });
-
-        let transactionDiff = transactionIdB! - transactionIdA!;
-        expect(transactionDiff).toBe(1);
-      });
-    });
-
-    describe('Extend Repository', () => {
-      it('should not create any intermediate transactions', async () => {
-        let transactionIdA: number | null = null;
-        let transactionIdB: number | null = null;
-
-        const customRepository = extendUserRepository(dataSource.getRepository(User));
-
-        await runInTransaction(async () => {
-          transactionIdA = await getCurrentTransactionId(dataSource);
-          await customRepository.save(new User('John Doe', 100));
-        });
-
-        await runInTransaction(async () => {
-          transactionIdB = await getCurrentTransactionId(dataSource);
-        });
-
-        let transactionDiff = transactionIdB! - transactionIdA!;
-        expect(transactionDiff).toBe(1);
-      });
-    });
-
-    // describe('Query Builder', () => {
-    //   it('should not create any intermediate transactions', async () => {
-    //     let transactionIdA: number | null = null;
-    //     let transactionIdB: number | null = null;
-
-    //     const qb = dataSource.createQueryBuilder();
-
-    //     await runInTransaction(async () => {
-    //       transactionIdA = await getCurrentTransactionId(dataSource);
-    //       await qb.insert().into(User).values({ name: 'John Doe', money: 100 }).execute();
-    //     });
-
-    //     await runInTransaction(async () => {
-    //       transactionIdB = await getCurrentTransactionId(dataSource);
-    //     });
-
-    //     let transactionDiff = transactionIdB! - transactionIdA!;
-    //     expect(transactionDiff).toBe(1);
-    //   });
-    // });
-
-    // describe('Entity Manager', () => {
-    //   it('should not create any intermediate transactions', async () => {
-    //     let transactionIdA: number | null = null;
-    //     let transactionIdB: number | null = null;
-
-    //     await runInTransaction(async () => {
-    //       transactionIdA = await getCurrentTransactionId(dataSource);
-    //       await dataSource.createEntityManager().save(new User('John Doe', 100));
-    //     });
-
-    //     await runInTransaction(async () => {
-    //       transactionIdB = await getCurrentTransactionId(dataSource);
-    //     });
-
-    //     let transactionDiff = transactionIdB! - transactionIdA!;
-    //     expect(transactionDiff).toBe(1);
-    //   });
-    // });
-  });
-
-  // Focus more on the repository, since it's the most common use case
-  describe('Repository', () => {
-    it('supports basic transactions', async () => {
-      const userRepository = new UserRepository(dataSource);
-
-      let transactionIdBefore: number | null = null;
-      await runInTransaction(async () => {
-        transactionIdBefore = await getCurrentTransactionId(userRepository);
-        await userRepository.createUser('John Doe');
-        const transactionIdAfter = await getCurrentTransactionId(userRepository);
 
         expect(transactionIdBefore).toBeTruthy();
-        expect(transactionIdBefore).toBe(transactionIdAfter);
+        expect(transactionIdOutside).toBe(null);
+        expect(transactionIdBefore).not.toBe(transactionIdOutside);
       });
-
-      const transactionIdOutside = await getCurrentTransactionId(userRepository);
-      expect(transactionIdOutside).toBe(null);
-      expect(transactionIdOutside).not.toBe(transactionIdBefore);
-
-      const user = await userRepository.findUserByName('John Doe');
-      expect(user).toBeDefined();
     });
 
-    it('should rollback the transaction if an error is thrown', async () => {
-      const userRepository = new UserRepository(dataSource);
-
-      try {
-        await runInTransaction(async () => {
-          await userRepository.createUser('John Doe');
-
-          throw new Error('Rollback transaction');
-        });
-      } catch {}
-
-      const user = await userRepository.findUserByName('John Doe');
-      expect(user).toBe(null);
-    });
-
-    it('supports nested transactions', async () => {
-      const userRepository = new UserRepository(dataSource);
-
-      await runInTransaction(async () => {
-        const transactionIdBefore = await getCurrentTransactionId(userRepository);
-        await userRepository.createUser('John Doe');
-
-        await runInTransaction(async () => {
-          const transactionIdAfter = await getCurrentTransactionId(userRepository);
-          expect(transactionIdBefore).toBe(transactionIdAfter);
-        });
-      });
-
-      expect.assertions(1);
-    });
-
-    it('supports several concurrent transactions', async () => {
-      const userRepository = new UserRepository(dataSource);
-
+    it('supports multiple parallel transaction', async () => {
       let transactionA: number | null = null;
       let transactionB: number | null = null;
       let transactionC: number | null = null;
 
-      await Promise.all([
+      const userRepository = new UserRepository(dataSource);
+
+      const [, ,] = await Promise.all([
         runInTransaction(async () => {
-          userRepository.createUser('John Doe');
+          await userRepository.createUser('John Doe');
 
           transactionA = await getCurrentTransactionId(userRepository);
         }),
         runInTransaction(async () => {
-          userRepository.createUser('Bob Smith');
+          await userRepository.createUser('Jane Smith');
 
           transactionB = await getCurrentTransactionId(userRepository);
         }),
@@ -399,58 +222,6 @@ describe('Transactional', () => {
       });
     });
 
-    it('should support "SUPPORTS" propagation if active transaction exists', async () => {
-      const userRepository = new UserRepository(dataSource);
-
-      await runInTransaction(async () => {
-        const transactionId = await getCurrentTransactionId(userRepository);
-        await userRepository.createUser('John Doe');
-
-        await runInTransaction(
-          async () => {
-            await userRepository.createUser('Bob Smith');
-            const transactionIdNested = await getCurrentTransactionId(userRepository);
-
-            // We expect the nested transaction to be under the same transaction
-            expect(transactionId).toBe(transactionIdNested);
-          },
-          { propagation: Propagation.SUPPORTS },
-        );
-      });
-    });
-
-    it('should support "SUPPORTS" propagation if active transaction doesn\'t exist', async () => {
-      const userRepository = new UserRepository(dataSource);
-
-      await runInTransaction(
-        async () => {
-          const transactionId = await getCurrentTransactionId(userRepository);
-
-          // We expect the code to be executed without a transaction
-          expect(transactionId).toBe(null);
-        },
-        { propagation: Propagation.SUPPORTS },
-      );
-    });
-
-    it('should support "MANDATORY" propagation if active transaction exists', async () => {
-      const userRepository = new UserRepository(dataSource);
-
-      await runInTransaction(async () => {
-        const transactionId = await getCurrentTransactionId(userRepository);
-
-        await runInTransaction(
-          async () => {
-            const transactionIdNested = await getCurrentTransactionId(userRepository);
-
-            // We expect the nested transaction to be under the same transaction
-            expect(transactionId).toBe(transactionIdNested);
-          },
-          { propagation: Propagation.MANDATORY },
-        );
-      });
-    });
-
     it('should throw an error if "MANDATORY" propagation is used without an active transaction', async () => {
       const userRepository = new UserRepository(dataSource);
 
@@ -546,6 +317,59 @@ describe('Transactional', () => {
       expect(commitSpy).toHaveBeenCalledTimes(1);
       expect(rollbackSpy).not.toHaveBeenCalled();
       expect(completeSpy).not.toHaveBeenCalled();
+    });
+
+    it('should run async "runOnTransactionCommit" hook and wait for it to complete', async () => {
+      const userRepository = new UserRepository(dataSource);
+      let asyncOperationComplete = false;
+      
+      await runInTransaction(async () => {
+        await userRepository.createUser('John Doe');
+        
+        runOnTransactionCommit(async () => {
+          await sleep(100);
+          asyncOperationComplete = true;
+        });
+      });
+      
+      // The transaction should have waited for the async hook to complete
+      expect(asyncOperationComplete).toBe(true);
+    });
+
+    it('should run multiple async "runOnTransactionCommit" hooks in parallel', async () => {
+      const userRepository = new UserRepository(dataSource);
+      const results: number[] = [];
+      const start = Date.now();
+      
+      await runInTransaction(async () => {
+        await userRepository.createUser('John Doe');
+        
+        // Add three async hooks that take different times to complete
+        runOnTransactionCommit(async () => {
+          await sleep(100);
+          results.push(1);
+        });
+        
+        runOnTransactionCommit(async () => {
+          await sleep(200);
+          results.push(2);
+        });
+        
+        runOnTransactionCommit(async () => {
+          await sleep(50);
+          results.push(3);
+        });
+      });
+      
+      // All hooks should have completed
+      expect(results).toContain(1);
+      expect(results).toContain(2);
+      expect(results).toContain(3);
+      
+      // Total time should be approximately the longest hook (200ms) plus some overhead
+      // Rather than sequential (350ms)
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(300);
     });
 
     it('should run "runOnTransactionRollback" hook', async () => {

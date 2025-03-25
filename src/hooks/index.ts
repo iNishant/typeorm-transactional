@@ -23,13 +23,34 @@ export const runAndTriggerHooks = async (hook: EventEmitter, cb: () => unknown) 
   try {
     const result = await Promise.resolve(cb());
 
-    setImmediate(() => {
-      hook.emit('commit');
-
-      hook.emit('end', undefined);
-      hook.removeAllListeners();
+    // Store the promises returned by commit handlers
+    const commitPromises: Promise<unknown>[] = [];
+    
+    // Create a promise that will be resolved when all commit handlers are executed
+    const commitPromise = new Promise<void>((resolve) => {
+      setImmediate(() => {
+        // Emit the 'commit' event and collect promises
+        hook.emit('commit', (promise: Promise<unknown>) => {
+          if (promise && typeof promise.then === 'function') {
+            commitPromises.push(promise);
+          }
+        });
+        
+        // Once all handlers have been called, resolve the promise
+        Promise.all(commitPromises)
+          .catch(error => console.error('Error in commit handler:', error))
+          .finally(() => {
+            // Always clean up after commit handlers, regardless of success/failure
+            hook.emit('end', undefined);
+            hook.removeAllListeners();
+            resolve();
+          });
+      });
     });
-
+    
+    // Wait for all commit handlers to complete
+    await commitPromise;
+    
     return result;
   } catch (err) {
     setImmediate(() => {
@@ -61,8 +82,14 @@ export const runInNewHookContext = async (context: StorageDriver, cb: () => unkn
   });
 };
 
-export const runOnTransactionCommit = (cb: () => void) => {
-  getTransactionalContextHook().once('commit', cb);
+export const runOnTransactionCommit = (cb: () => void | Promise<unknown>) => {
+  getTransactionalContextHook().once('commit', (collectPromise?: (promise: Promise<unknown>) => void) => {
+    const result = cb();
+    if (result && typeof result.then === 'function' && collectPromise) {
+      collectPromise(result);
+    }
+    return result;
+  });
 };
 
 export const runOnTransactionRollback = (cb: (e: Error) => void) => {
