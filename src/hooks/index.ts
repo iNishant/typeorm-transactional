@@ -34,18 +34,22 @@ export const runAndTriggerHooks = async (hook: EventEmitter, cb: () => unknown) 
     };
 
     // Create a promise that will be resolved when all commit handlers are executed
-    const commitPromise = new Promise<void>((resolve) => {
+    const commitPromise = new Promise<void>((resolve, reject) => {
       setImmediate(() => {
         // Emit the 'commit' event and collect promises
         hook.emit('commit', promiseCollector);
 
         // Once all handlers have been called, resolve the promise
-        Promise.all(commitPromises).finally(() => {
-          // Always clean up after commit handlers, regardless of success/failure
-          hook.emit('end', undefined);
-          hook.removeAllListeners();
-          resolve();
-        });
+        Promise.all(commitPromises)
+          .then(() => resolve())
+          .catch((err) => {
+            reject(err);
+          })
+          .finally(() => {
+            // Always clean up after commit handlers, regardless of success/failure
+            hook.emit('end', undefined);
+            hook.removeAllListeners();
+          });
       });
     });
 

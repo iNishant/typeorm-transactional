@@ -642,6 +642,31 @@ describe('Transactional', () => {
       const elapsed = Date.now() - start;
       expect(elapsed).toBeLessThan(300);
     });  
+
+    it('should bubble up rejection from async "runOnTransactionCommit" hook but transaction should commit', async () => {
+      const userRepository = new UserRepository(dataSource);
+      const expectedError = new Error('Async hook error');
+      
+      // Should reject with our hook error but the transaction should still commit
+      // since the side effects are run post commit
+      await expect(
+        async () => {
+          
+          await runInTransaction(async () => {
+            await userRepository.createUser('John Doe');
+            
+            runOnTransactionCommit(async () => {
+              throw expectedError;
+            });
+          })
+
+        }).rejects.toThrow();
+
+      const user = await userRepository.findUserByName('John Doe');
+      expect(user).not.toBeNull();
+      expect(user?.name).toBe('John Doe');
+    });
+
   });
 
   describe('Isolation', () => {
