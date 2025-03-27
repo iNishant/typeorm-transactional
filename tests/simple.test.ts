@@ -651,7 +651,6 @@ describe('Transactional', () => {
       // since the side effects are run post commit
       await expect(
         async () => {
-          
           await runInTransaction(async () => {
             await userRepository.createUser('John Doe');
             
